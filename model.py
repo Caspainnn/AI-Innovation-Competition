@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseModel(LLM):
-    max_token: int = 1024
+    max_token: int = 3096
     temperature: float = 0.7
     top_p : float = 0.9             # 这里不用top-k，而是概率，即知识库中，待选的chunks，必须与query的相似度之和必须小于等于0.9
     base_url: str = "https://api.siliconflow.cn/v1/" 

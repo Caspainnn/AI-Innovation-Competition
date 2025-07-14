@@ -2,6 +2,15 @@ import streamlit as st
 import time
 import requests
 import jieba
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+
+# 定义 API 地址
+BACKEND_API_URL = os.getenv("BACKEND_API_URL")
+MODEL_LIST = ["GLM_V4", "Qwen_32B", "DeepSeek_R1"]
 
 # 初始化会话状态
 if "start_chat" not in st.session_state:
@@ -95,8 +104,9 @@ if st.session_state.start_chat:
                     st.caption(f"📄 来源文件名：{source_name}")
                     for i, entry in enumerate(docs):
                         st.markdown(f"**文档 {i + 1}** (相关性评分: {entry['score']:.4f})")
-                        st.code(entry["preview"])
+                        st.info(entry["preview"])
 
+                        
 
     def stream_data(data):
         for word in jieba.cut(data):
@@ -112,12 +122,16 @@ if st.session_state.start_chat:
 
     # Sidebar：系统信息
     with st.sidebar:
-        st.header("📋 系统信息")
-        st.subheader("🔗 API 信息")
-        st.markdown("- **服务端口**: http://127.0.0.1:8000")
-        st.header("📋 系统状态")
+        st.subheader("🔧 技术栈:")
+        st.error("""
+        - **前端:** Streamlit
+        - **后端:** Flask
+        - **向量检索:** FAISS + BGE-Embeddings
+        - **精排:** BGE-Reranker (via SiliconFlow)
+        """)
+        st.subheader("📋 系统状态")
         try:
-            health_response = requests.get("http://127.0.0.1:8000/", timeout=2)
+            health_response = requests.get(BACKEND_API_URL, timeout=2)
             if health_response.status_code == 200:
                 st.success("✅ 后端服务正常")
             else:
@@ -131,9 +145,11 @@ if st.session_state.start_chat:
         if st.session_state.processing:
             conversation_count += 1
         st.info(f"🗨️ 对话轮次：{conversation_count}")
-
-        MODEL_LIST = ["GLM_V4", "Qwen_32B", "DeepSeek_R1", "快速模式"]
-        selected_model = st.selectbox("☑️ **选择模型**", MODEL_LIST)
+        
+        st.subheader("⭕️ API 端点:")
+        st.code(BACKEND_API_URL, language="bash")
+        
+        selected_model = st.selectbox("🧠 **模型选择**",MODEL_LIST)
 
     # 展示历史对话内容
     for idx, chat in enumerate(st.session_state.chat_history):
@@ -163,7 +179,8 @@ if st.session_state.start_chat:
         with st.chat_message("assistant"):
             with st.spinner("正在思考中..."):
                 try:
-                    response = requests.post("http://127.0.0.1:8000/query", json={
+                    response = requests.post(BACKEND_API_URL+"query", json={
+
                         "query": query,
                         "history": st.session_state.chat_history,
                         "model_name": selected_model})

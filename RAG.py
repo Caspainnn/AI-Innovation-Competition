@@ -217,10 +217,10 @@ def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]
         
         请根据上述内容生成一段法律分析说明，要求如下：
         1. 语言客观、专业、清晰；
-        2. 不要引用原文段落编号，整合成流畅文本；
-        3. 若有多个方面，请用要点列举；
+        2. 引用最新政策文件，标注办理依据（如 “根据《XX 条例》第 X 条”），整合成流畅文本；
+        3. 若有多个方面，请用要点列举（如：1. 2. 3.）；
         4. 若没有足够信息，请说明“无法准确判断”。
-        
+  
         最终输出：
     """.strip()
 
@@ -230,40 +230,10 @@ def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]
             llm=model.GLM_V4()
         elif model_name == "Qwen_32B":
             llm=model.Qwen_32B()
-        elif model_name == "DeepSeek_R1":
+        else: 
             llm=model.DeepSeek_R1()
-        else:
-            llm = ChatOpenAI(
-            model="Qwen/QwQ-32B",
-            api_key= API_KEY,
-            base_url="https://api.siliconflow.cn/v1",
-            temperature=0.3
-            )
-            messages = [
-            {"role": "system", "content": "你是一个精通中国法律的法律助手，善于归纳总结并解释法律问题。"},
-            {"role": "user", "content": prompt}
-            ]
-
-            response = llm.invoke(messages)
-            
-
-            # 根据实际返回结构判断是 content 字段还是 json 格式
-            try:
-                result = json.loads(response.content)
-                return result.get("output", str(result))  # 支持多种格式
-            except Exception:
-                return response.content if isinstance(response.content, str) else str(response.content)
-
         
-        # messages = [
-        #     {"role": "system", "content": "你是一个精通中国法律的法律助手，善于归纳总结并解释法律问题。"},
-        #     {"role": "user", "content": prompt}
-        # ]
-        
-        # llm.set_history(history)
         response = llm.invoke(prompt)
-        print("--history_length:",len(llm.history))
-        # print("history:",llm.history)
         
         try:
             result = json.loads(response)
