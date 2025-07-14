@@ -24,7 +24,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
 
 # --- 配置 ---
-FOLDER_PATH = "E:/self-cultivation/2025小学期/作业/大实验/sx/数据"
+FOLDER_PATH = "./数据"
 EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 120
@@ -121,13 +121,16 @@ def create_and_save_metadata(chunks: list[Document], output_dir: str, metadata_f
     print(f"\n元数据已保存到：{metadata_file_path}")
 
 # --- SiliconFlow Reranker 函数 ---
+#from FlagEmbedding import FlagReranker
+#rerank的新模型：BAAI/bge-reranker-base
+#这个模型调用要用到FlagReranker
 def rerank_documents_siliconflow(
     query: str,
     documents: list[Document], # 接收 LangChain Document 对象列表
     model: str = RERANKER_MODEL,
     api_key: str = SILICONFLOW_API_KEY,
     top_n: int = 5 # 重排后返回的顶部文档数量
-) -> list[Document]:
+) -> list[tuple[Document, float]]:
     # 使用 SiliconFlow Rerank API 对文档进行重排
     if not api_key:
         print("错误：未设置 SILICONFLOW_API_KEY 环境变量，无法调用 Reranker API。")
@@ -171,14 +174,10 @@ def rerank_documents_siliconflow(
         reranked_items.sort(key=lambda x: x['score'], reverse=True)
 
         # 提取 top_n 文档
-        top_reranked_docs = [item['document'] for item in reranked_items[:top_n]]
-
-        # print(f"\nRerank 成功，返回 Top {len(top_reranked_docs)} 文档。\n")
-        # for i, doc_item in enumerate(reranked_items[:top_n]):
-        #     print(f"Top {i+1} (Score: {doc_item['score']:.4f}): {doc_item['document'].page_content[:100]}...")
-
+        top_reranked_docs = [
+            (item['document'], item['score']) for item in reranked_items[:top_n]
+        ]
         return top_reranked_docs
-
     except requests.exceptions.RequestException as e:
         print(f"调用 SiliconFlow Reranker API 失败: 网络或请求错误 - {e}")
         return []
@@ -189,35 +188,41 @@ def rerank_documents_siliconflow(
         print(f"Reranker 发生未知错误: {e}")
         return []
 
+
 # 6. LLM 生成答案
-def generate_llm_response(query: str, top_documents: list[Document]) -> str:
+from typing import List, Tuple
+from langchain_core.documents import Document
+
+def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]]) -> str:
     """
         使用 LLM 对 top N 文档内容进行总结、合并，并生成结构化答案
     """
     context_text = "\n\n".join(
-        f"段落{i + 1}：{doc.page_content}" for i, doc in enumerate(top_documents)
+        f"段落{i + 1}（评分: {score:.4f}）：{doc.page_content}" for i, (doc, score) in enumerate(top_documents)
     )
+
     prompt = f"""
         你是一个精通中国法律的AI助手，现在有用户向你提出法律问题，请根据以下检索到的文档内容进行总结、归纳，输出权威且简洁的法律分析结果。
-    
+        
         用户问题：
         {query}
-    
+        
         相关参考文档：
         {context_text}
-    
+        
         请根据上述内容生成一段法律分析说明，要求如下：
         1. 语言客观、专业、清晰；
         2. 不要引用原文段落编号，整合成流畅文本；
         3. 若有多个方面，请用要点列举（如 "①...②..."）；
         4. 若没有足够信息，请说明“无法准确判断”。
-    
+        
         最终输出：
-    """
+    """.strip()
+
     try:
         llm = ChatOpenAI(
             model="Qwen/QwQ-32B",
-            api_key= API_KEY,
+            api_key=API_KEY,
             base_url="https://api.siliconflow.cn/v1",
             temperature=0.3
         )
@@ -229,16 +234,16 @@ def generate_llm_response(query: str, top_documents: list[Document]) -> str:
 
         response = llm.invoke(messages)
 
-        # 根据实际返回结构判断是 content 字段还是 json 格式
         try:
             result = json.loads(response.content)
-            return result.get("output", str(result))  # 支持多种格式
+            return result.get("output", str(result))  # 支持结构化输出
         except Exception:
             return response.content if isinstance(response.content, str) else str(response.content)
 
     except Exception as e:
         print(f"⚠️ LLM 总结失败：{e}")
         return "❌ 无法生成法律分析，请检查API密钥或网络连接。"
+
 
 if __name__ == "__main__":
     # 1. 加载文档
@@ -274,7 +279,7 @@ if __name__ == "__main__":
             print("⚠️ 输入不能为空。")
             continue
 
-        retriever = loaded_faiss_db.as_retriever(search_kwargs={"k": 8})
+        retriever = loaded_faiss_db.as_retriever(search_kwargs={"k": 6})
         initial_retrieved_docs = retriever.invoke(user_query)
         # print(f"\n--- 🔍 初始检索到 {len(initial_retrieved_docs)} 篇文档 ---")
         # for i, doc in enumerate(initial_retrieved_docs):

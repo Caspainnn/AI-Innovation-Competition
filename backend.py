@@ -21,6 +21,7 @@ class QueryRequest(BaseModel):
 class Reference(BaseModel):
     source: str
     preview: str
+    score: float
 
 class AnswerResponse(BaseModel):
     answer: str
@@ -35,7 +36,7 @@ def read_root():
 async def rag_query(request: QueryRequest):
     query = request.query.strip()
 
-    retriever = faiss_db.as_retriever(search_kwargs={"k": 3})
+    retriever = faiss_db.as_retriever(search_kwargs={"k": 4})
     retrieved_docs = retriever.invoke(query)
     reranked_docs = rerank_documents_siliconflow(query, retrieved_docs, top_n=5)
 
@@ -43,10 +44,11 @@ async def rag_query(request: QueryRequest):
 
     # 🔍 封装所有参考文档（可选：retrieved_docs 或 reranked_docs）
     references = []
-    for doc in reranked_docs:  # 或 reranked_docs，根据你想展示哪些
+    for doc , score in reranked_docs:  # 或 reranked_docs，根据你想展示哪些
         references.append({
             "source": doc.metadata.get("source", "未知"),
-            "preview": doc.page_content[:150] + "..."
+            "preview": doc.page_content[:150] + "...",
+            "score": score
         })
 
     print(f"参考文档返回数量：{len(references)}")
@@ -57,8 +59,6 @@ async def rag_query(request: QueryRequest):
         "answer": answer,
         "references": references
     }
-
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
