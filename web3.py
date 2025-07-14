@@ -7,27 +7,30 @@ st.set_page_config(page_title="法律智能助手", page_icon="⚖️", layout="
 st.title("⚖️ 法务智能助手")
 st.caption("基于RAG技术的智能法务问答系统 | SiliconFlow AI引擎支持")
 
+# 自定义展示参考法律条文的函数
+def render_reference_articles(refs, answer_text):
+    if refs and "未在文档中找到明确依据" not in answer_text:
+        with st.expander("📚 参考法律条文", expanded=False):
+            source_groups = {}
 
-# 封装展示引用条文的函数
-def render_references(reference_chunks, caption, is_current=False):
-    st.caption(caption)
-    if reference_chunks:
-        # 只有当前回答才展开，历史对话都折叠
-        expanded = is_current
-        with st.expander("📚 查看引用条文", expanded=expanded):
-            doc_groups = {}
-            for doc in reference_chunks:
-                name = doc.get("source", "未知来源").split("\\")[-1].split("/")[-1]
+            for doc in refs:
+                # 提取来源文件名（你也可以换成结构化的法典名称）
+                source_path = doc.get("source", "未知来源")
+                source_name = source_path.split("\\")[-1].split("/")[-1]
                 preview = doc.get("preview", "⚠️ 无预览内容")
-                doc_groups.setdefault(name, []).append(preview)
-            for name, chunks in doc_groups.items():
-                st.markdown(f"#### 📄 {name}")
-                for idx, chunk in enumerate(chunks):
-                    if len(chunks) > 1:
-                        st.markdown(f"**片段 {idx + 1}:**")
-                    st.markdown(chunk)
-                    if idx < len(chunks) - 1:
-                        st.markdown("---")
+                score = float(doc.get("score", 0.0))
+                source_groups.setdefault(source_name, []).append({
+                    "preview": preview.strip(),
+                    "score": score
+                })
+
+            # 展示每个唯一来源文件一次
+            for source_name, docs in source_groups.items():
+                st.caption(f"📄 来源文件名：{source_name}")
+                for i, entry in enumerate(docs):
+                    st.markdown(f"**文档 {i + 1}** (相关性评分: {entry['score']:.4f})")
+                    st.code(entry["preview"])
+
 
 
 # 初始化状态变量
@@ -53,17 +56,12 @@ with st.sidebar:
     st.info(f"🗨️ 对话轮次：{len(st.session_state.chat_history)}")
 
 # 展示历史对话内容
-for idx, round in enumerate(st.session_state.chat_history):
+for idx, chat in enumerate(st.session_state.chat_history):
     with st.chat_message("user"):
-        st.markdown(round["query"])
+        st.markdown(chat["query"])
     with st.chat_message("assistant"):
-        st.markdown(round["answer"])
-        # 历史对话的引用条文默认折叠，显示历史响应时间
-        render_references(
-            round["references"],
-            f"⏱️ 响应时间：{round.get('response_time', 'N/A')}秒 | 📑 引用条文数：{len(round['references'])}",
-            is_current=False
-        )
+        st.markdown(chat["answer"])
+        render_reference_articles(chat.get("refs", []),chat["answer"])
 
 # 用户输入框
 query = st.chat_input("请输入你的法律问题...")
@@ -72,7 +70,7 @@ query = st.chat_input("请输入你的法律问题...")
 if query and not st.session_state.processing:
     st.session_state.processing = True
 
-    # 立即显示用户输入
+    # 显示用户输入
     with st.chat_message("user"):
         st.markdown(query)
 
@@ -86,34 +84,26 @@ if query and not st.session_state.processing:
                 response.raise_for_status()
                 result = response.json()
                 answer = result.get("answer", "❌ 未返回回答")
-                references = result.get("references", [])
+                references = result.get("references", [])  # references = List[Tuple[Dict, float]]
             except requests.exceptions.RequestException as e:
                 answer = f"❌ 请求失败：{e}"
                 references = []
 
-        # 计算响应时间
+        # 响应时间
         response_time = time.time() - start_time
 
-        # 显示回答
+        # 显示回答内容
         st.markdown(answer)
+        render_reference_articles(references, answer)
 
-        # 当前回答的引用条文默认展开，显示响应时间
-        render_references(
-            references,
-            f"⏱️ 响应时间：{response_time:.2f}秒 | 📑 引用条文数：{len(references)}",
-            is_current=True
-        )
-
-        # 保存会话到历史记录，包含响应时间
+        # 保存历史
         st.session_state.chat_history.append({
             "query": query,
             "answer": answer,
-            "references": references,
-            "response_time": f"{response_time:.2f}"  # 保存格式化的响应时间
+            "refs": references,
+            "response_time": f"{response_time:.2f}"
         })
 
     # 重置处理状态
     st.session_state.processing = False
-
-    # 重新运行以刷新界面
     st.rerun()
