@@ -123,11 +123,12 @@ if st.session_state.start_chat:
     # Sidebar：系统信息
     with st.sidebar:
         st.subheader("🔧 技术栈:")
-        st.error("""
-        - **前端:** Streamlit
-        - **后端:** Flask
-        - **向量检索:** FAISS + BGE-Embeddings
-        - **精排:** BGE-Reranker (via SiliconFlow)
+        st.markdown("""
+        **系统架构说明**  
+        - 前端: Streamlit  
+        - 后端: Flask  
+        - 向量检索: FAISS + BGE-Embeddings  
+        - 精排: BGE-Reranker (via SiliconFlow)
         """)
         st.subheader("📋 系统状态")
         try:
