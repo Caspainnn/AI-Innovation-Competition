@@ -54,6 +54,10 @@ with st.sidebar:
     except:
         st.error("❌ 后端服务连接失败")
     st.info(f"🗨️ 对话轮次：{len(st.session_state.chat_history)}")
+    
+    MODEL_LIST = ["GLM_V4", "Qwen_32B","DeepSeek_R1","快速模式"]
+    selected_model = st.selectbox("☑️ **选择模型**", MODEL_LIST)
+
 
 # 展示历史对话内容
 for idx, chat in enumerate(st.session_state.chat_history):
@@ -80,7 +84,10 @@ if query and not st.session_state.processing:
     with st.chat_message("assistant"):
         with st.spinner("正在思考中..."):
             try:
-                response = requests.post("http://127.0.0.1:8000/query", json={"query": query})
+                response = requests.post("http://127.0.0.1:8000/query", json={
+                    "query": query, 
+                    "history": st.session_state.chat_history, 
+                    "model_name": selected_model})
                 response.raise_for_status()
                 result = response.json()
                 answer = result.get("answer", "❌ 未返回回答")

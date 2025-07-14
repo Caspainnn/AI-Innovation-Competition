@@ -22,6 +22,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
+import model
 
 # --- 配置 ---
 FOLDER_PATH = "./数据"
@@ -36,7 +37,7 @@ SILICONFLOW_API_KEY =  os.getenv("SILICONFLOW_API_KEY")
 SILICONFLOW_RERANK_URL = "https://api.siliconflow.cn/v1/rerank"
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3" # 用户提供的模型名称
 
-API_KEY = "sk-uyysjarbjuecjrgxacqnbbdrulbjlrtlsymfnkazrfinilee"
+API_KEY = os.getenv("CHATOPENAI_API_KEY")
 
 # 1. 加载文件夹中的数据
 def load_documents_from_folder(folder_path:str):
@@ -193,7 +194,7 @@ def rerank_documents_siliconflow(
 from typing import List, Tuple
 from langchain_core.documents import Document
 
-def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]]) -> str:
+def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]],model_name:str="GLM_V4",history:list=[]) -> str:
     """
         使用 LLM 对 top N 文档内容进行总结、合并，并生成结构化答案
     """
@@ -207,38 +208,69 @@ def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]
         用户问题：
         {query}
         
+        历史记录：
+        {history}
+        
         相关参考文档：
         {context_text}
+        
         
         请根据上述内容生成一段法律分析说明，要求如下：
         1. 语言客观、专业、清晰；
         2. 不要引用原文段落编号，整合成流畅文本；
-        3. 若有多个方面，请用要点列举（如 "①...②..."）；
+        3. 若有多个方面，请用要点列举；
         4. 若没有足够信息，请说明“无法准确判断”。
         
         最终输出：
     """.strip()
 
     try:
-        llm = ChatOpenAI(
+        print("开始选择模型调用...")
+        if model_name == "GLM_V4":
+            llm=model.GLM_V4()
+        elif model_name == "Qwen_32B":
+            llm=model.Qwen_32B()
+        elif model_name == "DeepSeek_R1":
+            llm=model.DeepSeek_R1()
+        else:
+            llm = ChatOpenAI(
             model="Qwen/QwQ-32B",
-            api_key=API_KEY,
+            api_key= API_KEY,
             base_url="https://api.siliconflow.cn/v1",
             temperature=0.3
-        )
-
-        messages = [
+            )
+            messages = [
             {"role": "system", "content": "你是一个精通中国法律的法律助手，善于归纳总结并解释法律问题。"},
             {"role": "user", "content": prompt}
-        ]
+            ]
 
-        response = llm.invoke(messages)
+            response = llm.invoke(messages)
+            
 
+            # 根据实际返回结构判断是 content 字段还是 json 格式
+            try:
+                result = json.loads(response.content)
+                return result.get("output", str(result))  # 支持多种格式
+            except Exception:
+                return response.content if isinstance(response.content, str) else str(response.content)
+
+        
+        # messages = [
+        #     {"role": "system", "content": "你是一个精通中国法律的法律助手，善于归纳总结并解释法律问题。"},
+        #     {"role": "user", "content": prompt}
+        # ]
+        
+        # llm.set_history(history)
+        response = llm.invoke(prompt)
+        print("--history_length:",len(llm.history))
+        # print("history:",llm.history)
+        
         try:
-            result = json.loads(response.content)
+            result = json.loads(response)
             return result.get("output", str(result))  # 支持结构化输出
-        except Exception:
-            return response.content if isinstance(response.content, str) else str(response.content)
+        except json.JSONDecodeError:
+            # 若不是有效的 JSON，直接返回原始文本
+            return response
 
     except Exception as e:
         print(f"⚠️ LLM 总结失败：{e}")
@@ -247,23 +279,23 @@ def generate_llm_response(query: str, top_documents: List[Tuple[Document, float]
 
 if __name__ == "__main__":
     # 1. 加载文档
-    docs = load_documents_from_folder(FOLDER_PATH)
-    print(f"📑 共加载 {len(docs)} 个文档页")
+    # docs = load_documents_from_folder(FOLDER_PATH)
+    # print(f"📑 共加载 {len(docs)} 个文档页")
 
-    # 2. 文本切块
-    chunks_docs = split_documents(docs)
+    # # 2. 文本切块
+    # chunks_docs = split_documents(docs)
 
-    # 3. 初始化嵌入向量
-    embeddings = get_embeddings_model(EMBEDDING_MODEL)
+    # # 3. 初始化嵌入向量
+    # embeddings = get_embeddings_model(EMBEDDING_MODEL)
 
-    # 4. 创建并保存 FAISS 向量数据库
-    faiss_db = create_and_save_faiss_db(chunks_docs, embeddings, FAISS_DB_PATH)
+    # # 4. 创建并保存 FAISS 向量数据库
+    # faiss_db = create_and_save_faiss_db(chunks_docs, embeddings, FAISS_DB_PATH)
 
-    # 5. 创建并保存元数据文件
-    create_and_save_metadata(chunks_docs,FAISS_DB_PATH,METADATA_FILE_NAME)
+    # # 5. 创建并保存元数据文件
+    # create_and_save_metadata(chunks_docs,FAISS_DB_PATH,METADATA_FILE_NAME)
 
-    print("\n ✅ 进程成功完成！ ")
-    print(f"📌 FAISS 索引和元数据存储在：{os.path.abspath(FAISS_DB_PATH)}")
+    # print("\n ✅ 进程成功完成！ ")
+    # print(f"📌 FAISS 索引和元数据存储在：{os.path.abspath(FAISS_DB_PATH)}")
 
     print("\n --- Rerank 功能示例 ---")
     loaded_model = get_embeddings_model(EMBEDDING_MODEL)
@@ -288,7 +320,7 @@ if __name__ == "__main__":
         top_reranked_docs = rerank_documents_siliconflow(user_query, initial_retrieved_docs, top_n=5)
 
         print("\n🚀 正在调用大模型 LLM 生成最终答案...")
-        final_answer = generate_llm_response(user_query, top_reranked_docs)
+        final_answer = generate_llm_response(user_query, top_reranked_docs, model_name="GLM_V4")
         print(f"\n📢 回答：\n{final_answer}")
 
 
