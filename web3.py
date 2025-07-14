@@ -66,7 +66,6 @@ if not st.session_state.start_chat:
         st.session_state.start_chat = True
         st.rerun()
 
-
 if st.session_state.start_chat:
     # ======================= 咨询页面 =======================
     # 页面配置
@@ -98,11 +97,13 @@ if st.session_state.start_chat:
                         st.markdown(f"**文档 {i + 1}** (相关性评分: {entry['score']:.4f})")
                         st.code(entry["preview"])
 
+
     def stream_data(data):
         for word in jieba.cut(data):
             yield word
             time.sleep(0.03)  # 适当调整延迟时间
-    
+
+
     # 初始化状态变量
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -123,11 +124,16 @@ if st.session_state.start_chat:
                 st.error("❌ 后端服务异常")
         except:
             st.error("❌ 后端服务连接失败")
-        st.info(f"🗨️ 对话轮次：{len(st.session_state.chat_history)}")
-        
-        MODEL_LIST = ["GLM_V4", "Qwen_32B","DeepSeek_R1","快速模式"]
-        selected_model = st.selectbox("☑️ **选择模型**", MODEL_LIST)
 
+        # 修复：对话轮次统计应该按query计算，而不是按总条目数
+        conversation_count = len(st.session_state.chat_history)
+        # 如果正在处理新请求，显示即将到来的对话轮次
+        if st.session_state.processing:
+            conversation_count += 1
+        st.info(f"🗨️ 对话轮次：{conversation_count}")
+
+        MODEL_LIST = ["GLM_V4", "Qwen_32B", "DeepSeek_R1", "快速模式"]
+        selected_model = st.selectbox("☑️ **选择模型**", MODEL_LIST)
 
     # 展示历史对话内容
     for idx, chat in enumerate(st.session_state.chat_history):
@@ -135,7 +141,10 @@ if st.session_state.start_chat:
             st.markdown(chat["query"])
         with st.chat_message("assistant"):
             st.markdown(chat["answer"])
-            render_reference_articles(chat.get("refs", []),chat["answer"])
+            render_reference_articles(chat.get("refs", []), chat["answer"])
+            # 只有在不处理新请求时才显示思考时间，避免重复显示
+            if "response_time" in chat and not st.session_state.processing:
+                st.caption(f"⏱️ 思考时间：{chat['response_time']} 秒")
 
     # 用户输入框
     query = st.chat_input("请输入你的法律问题...")
@@ -155,13 +164,13 @@ if st.session_state.start_chat:
             with st.spinner("正在思考中..."):
                 try:
                     response = requests.post("http://127.0.0.1:8000/query", json={
-                        "query": query, 
-                        "history": st.session_state.chat_history, 
+                        "query": query,
+                        "history": st.session_state.chat_history,
                         "model_name": selected_model})
                     response.raise_for_status()
                     result = response.json()
                     answer = result.get("answer", "❌ 未返回回答")
-                    references = result.get("references", [])  # references = List[Tuple[Dict, float]]
+                    references = result.get("references", [])
                 except requests.exceptions.RequestException as e:
                     answer = f"❌ 请求失败：{e}"
                     references = []
@@ -169,11 +178,20 @@ if st.session_state.start_chat:
             # 响应时间
             response_time = time.time() - start_time
 
-            # 显示回答内容
-            st.write_stream(stream_data(answer))
-            render_reference_articles(references, answer)
+            # 🌟 流式输出回答
+            final_answer = ""
+            placeholder = st.empty()
+            for chunk in stream_data(answer):
+                final_answer += chunk
+                placeholder.markdown(final_answer)
 
-            # 保存历史
+            # ✅ 显示参考法条
+            render_reference_articles(references, final_answer)
+
+            # ✅ 显示思考时间
+            st.caption(f"⏱️ 思考时间：{response_time:.2f} 秒")
+
+            # 修复：先保存到历史记录，再重置processing状态
             st.session_state.chat_history.append({
                 "query": query,
                 "answer": answer,
@@ -183,4 +201,5 @@ if st.session_state.start_chat:
 
         # 重置处理状态
         st.session_state.processing = False
+        # 立即刷新页面显示最新的对话轮次和避免重复显示
         st.rerun()
