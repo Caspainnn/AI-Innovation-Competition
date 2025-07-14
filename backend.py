@@ -17,6 +17,9 @@ faiss_db = FAISS.load_local("./faiss_index", embedding_model,allow_dangerous_des
 
 class QueryRequest(BaseModel):
     query: str
+    history: list = []  # 接收前端传来的历史记录
+    model_name: str = "Qwen_32B"  # 新增 model_name 参数
+
 
 class Reference(BaseModel):
     source: str
@@ -35,13 +38,14 @@ def read_root():
 @app.post("/query", response_model=AnswerResponse)
 async def rag_query(request: QueryRequest):
     query = request.query.strip()
+    history = request.history
+    model_name = request.model_name.strip()
 
     retriever = faiss_db.as_retriever(search_kwargs={"k": 4})
     retrieved_docs = retriever.invoke(query)
     reranked_docs = rerank_documents_siliconflow(query, retrieved_docs, top_n=5)
-
-    answer = generate_llm_response(query, reranked_docs)
-
+    
+    answer = generate_llm_response(query, reranked_docs,model_name,history)
     # 🔍 封装所有参考文档（可选：retrieved_docs 或 reranked_docs）
     references = []
     for doc , score in reranked_docs:  # 或 reranked_docs，根据你想展示哪些
