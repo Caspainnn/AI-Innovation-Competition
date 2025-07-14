@@ -187,7 +187,6 @@ if st.session_state.start_chat:
 
             # ✅ 显示参考法条
             render_reference_articles(references, final_answer)
-
             # ✅ 显示思考时间
             st.caption(f"⏱️ 思考时间：{response_time:.2f} 秒")
 
